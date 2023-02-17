@@ -1,9 +1,3 @@
-variable "hcloud_token" {
-  description = "Hetzner Cloud API Token."
-  type        = string
-  sensitive   = true
-}
-
 variable "ssh_port" {
   description = "The main SSH port to connect to the nodes."
   type        = number
@@ -26,46 +20,10 @@ variable "ssh_private_key" {
   sensitive   = true
 }
 
-variable "ssh_hcloud_key_label" {
-  description = "Additional SSH public Keys by hcloud label. e.g. role=admin"
-  type        = string
-  default     = ""
-}
-
 variable "ssh_additional_public_keys" {
   description = "Additional SSH public Keys. Use them to grant other team members root access to your cluster nodes."
   type        = list(string)
   default     = []
-}
-
-variable "hcloud_ssh_key_id" {
-  description = "If passed, a key already registered within hetzner is used. Otherwise, a new one will be created by the module."
-  type        = string
-  default     = null
-}
-
-variable "network_region" {
-  description = "Default region for network."
-  type        = string
-  default     = "eu-central"
-}
-
-variable "load_balancer_location" {
-  description = "Default load balancer location."
-  type        = string
-  default     = "fsn1"
-}
-
-variable "load_balancer_type" {
-  description = "Default load balancer server type."
-  type        = string
-  default     = "lb11"
-}
-
-variable "load_balancer_disable_ipv6" {
-  description = "Disable ipv6 for the load balancer."
-  type        = bool
-  default     = false
 }
 
 variable "control_plane_nodepools" {
@@ -80,29 +38,6 @@ variable "agent_nodepools" {
   default     = []
 }
 
-variable "cluster_autoscaler_image" {
-  type        = string
-  default     = "k8s.gcr.io/autoscaling/cluster-autoscaler"
-  description = "Image of Kubernetes Cluster Autoscaler for Hetzner Cloud to be used."
-}
-
-variable "cluster_autoscaler_version" {
-  type        = string
-  default     = "v1.25.0"
-  description = "Version of Kubernetes Cluster Autoscaler for Hetzner Cloud. Should be aligned with Kubernetes version"
-}
-
-variable "autoscaler_nodepools" {
-  description = "Cluster autoscaler nodepools."
-  type = list(object({
-    name        = string
-    server_type = string
-    location    = string
-    min_nodes   = number
-    max_nodes   = number
-  }))
-  default = []
-}
 
 variable "hetzner_ccm_version" {
   type        = string
@@ -250,12 +185,6 @@ variable "base_domain" {
   }
 }
 
-variable "placement_group_disable" {
-  type        = bool
-  default     = false
-  description = "Whether to disable placement groups."
-}
-
 variable "disable_network_policy" {
   type        = bool
   default     = false
@@ -370,17 +299,6 @@ variable "rancher_hostname" {
 
   validation {
     condition     = can(regex("^(?:(?:(?:[A-Za-z0-9])|(?:[A-Za-z0-9](?:[A-Za-z0-9\\-]+)?[A-Za-z0-9]))+(\\.))+([A-Za-z]{2,})([\\/?])?([\\/?][A-Za-z0-9\\-%._~:\\/?#\\[\\]@!\\$&\\'\\(\\)\\*\\+,;=]+)?$", var.rancher_hostname)) || var.rancher_hostname == ""
-    error_message = "It must be a valid domain name (FQDN)."
-  }
-}
-
-variable "lb_hostname" {
-  type        = string
-  default     = ""
-  description = "The Hetzner Load Balancer hostname, for either Traefik or Ingress-Nginx."
-
-  validation {
-    condition     = can(regex("^(?:(?:(?:[A-Za-z0-9])|(?:[A-Za-z0-9](?:[A-Za-z0-9\\-]+)?[A-Za-z0-9]))+(\\.))+([A-Za-z]{2,})([\\/?])?([\\/?][A-Za-z0-9\\-%._~:\\/?#\\[\\]@!\\$&\\'\\(\\)\\*\\+,;=]+)?$", var.lb_hostname)) || var.lb_hostname == ""
     error_message = "It must be a valid domain name (FQDN)."
   }
 }

@@ -19,16 +19,14 @@ resource "null_resource" "first_control_plane" {
           disable                     = local.disable_extras
           kubelet-arg                 = local.kubelet_arg
           kube-controller-manager-arg = local.kube_controller_manager_arg
-          flannel-iface               = local.flannel_iface
+          flannel-iface               = module.control_planes[keys(module.control_planes)[0]].network_interface
           node-ip                     = module.control_planes[keys(module.control_planes)[0]].private_ipv4_address
           advertise-address           = module.control_planes[keys(module.control_planes)[0]].private_ipv4_address
           node-taint                  = local.control_plane_nodes[keys(module.control_planes)[0]].taints
           node-label                  = local.control_plane_nodes[keys(module.control_planes)[0]].labels
         },
         lookup(local.cni_k3s_settings, var.cni_plugin, {}),
-        var.use_control_plane_lb ? {
-          tls-san = concat([hcloud_load_balancer.control_plane.*.ipv4[0], hcloud_load_balancer_network.control_plane.*.ip[0]], var.additional_tls_sans)
-          } : {
+        {
           tls-san = concat([module.control_planes[keys(module.control_planes)[0]].ipv4_address], var.additional_tls_sans)
         },
         local.etcd_s3_snapshots,
@@ -70,10 +68,6 @@ resource "null_resource" "first_control_plane" {
       EOT
     ]
   }
-
-  depends_on = [
-    hcloud_network_subnet.control_plane
-  ]
 }
 
 # Needed for rancher setup
@@ -101,7 +95,6 @@ resource "null_resource" "kustomization" {
 
       resources = concat(
         [
-          "https://github.com/hetznercloud/hcloud-cloud-controller-manager/releases/download/${local.ccm_version}/ccm-networks.yaml",
           "https://github.com/weaveworks/kured/releases/download/${local.kured_version}/kured-${local.kured_version}-dockerhub.yaml",
           "https://raw.githubusercontent.com/rancher/system-upgrade-controller/master/manifests/system-upgrade-controller.yaml",
         ],
@@ -119,7 +112,6 @@ resource "null_resource" "kustomization" {
         [
           file("${path.module}/kustomize/system-upgrade-controller.yaml"),
           "kured.yaml",
-          "ccm.yaml",
         ],
         lookup(local.cni_install_resource_patches, var.cni_plugin, [])
       )
@@ -145,18 +137,6 @@ resource "null_resource" "kustomization" {
         values = indent(4, trimspace(local.nginx_values))
     })
     destination = "/var/post_install/nginx_ingress.yaml"
-  }
-
-  # Upload the CCM patch config
-  provisioner "file" {
-    content = templatefile(
-      "${path.module}/templates/ccm.yaml.tpl",
-      {
-        cluster_cidr_ipv4   = local.cluster_cidr_ipv4
-        default_lb_location = var.load_balancer_location
-        using_klipper_lb    = local.using_klipper_lb
-    })
-    destination = "/var/post_install/ccm.yaml"
   }
 
   # Upload the calico patch config, for the kustomization of the calico manifest
@@ -233,16 +213,6 @@ resource "null_resource" "kustomization" {
     destination = "/var/post_install/kured.yaml"
   }
 
-  # Deploy secrets, logging is automatically disabled due to sensitive variables
-  provisioner "remote-exec" {
-    inline = [
-      "set -ex",
-      "kubectl -n kube-system create secret generic hcloud --from-literal=token=${var.hcloud_token} --from-literal=network=${hcloud_network.k3s.name} --dry-run=client -o yaml | kubectl apply -f -",
-      "kubectl -n kube-system create secret generic hcloud-csi --from-literal=token=${var.hcloud_token} --dry-run=client -o yaml | kubectl apply -f -",
-      "curl https://raw.githubusercontent.com/hetznercloud/csi-driver/${local.csi_version}/deploy/kubernetes/hcloud-csi.yml | sed -e 's|k8s.gcr.io|registry.k8s.io|g' > /var/post_install/hcloud-csi.yml"
-    ]
-  }
-
   # Deploy our post-installation kustomization
   provisioner "remote-exec" {
     inline = concat([
@@ -278,22 +248,12 @@ resource "null_resource" "kustomization" {
         "kubectl -n system-upgrade wait --for=condition=available --timeout=180s deployment/system-upgrade-controller",
         "sleep 5", # important as the system upgrade controller CRDs sometimes don't get ready right away, especially with Cilium.
         "kubectl -n system-upgrade apply -f /var/post_install/plans.yaml"
-      ],
-      local.has_external_load_balancer ? [] : [
-        <<-EOT
-      timeout 180 bash <<EOF
-      until [ -n "\$(kubectl get -n ${lookup(local.ingress_controller_namespace_names, local.ingress_controller)} service/${lookup(local.ingress_controller_service_names, local.ingress_controller)} --output=jsonpath='{.status.loadBalancer.ingress[0].${var.lb_hostname != "" ? "hostname" : "ip"}}' 2> /dev/null)" ]; do
-          echo "Waiting for load-balancer to get an IP..."
-          sleep 2
-      done
-      EOF
-      EOT
-    ])
+      ]
+    )
   }
 
   depends_on = [
     null_resource.first_control_plane,
     random_password.rancher_bootstrap,
-    hcloud_volume.longhorn_volume
   ]
 }

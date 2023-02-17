@@ -3,12 +3,6 @@ locals {
   # For terraforms provisioner.connection.agent_identity, we need the public key as a string.
   ssh_agent_identity = var.ssh_private_key == null ? var.ssh_public_key : null
 
-  # If passed, a key already registered within hetzner is used.
-  # Otherwise, a new one will be created by the module.
-  hcloud_ssh_key_id = var.hcloud_ssh_key_id == null ? hcloud_ssh_key.k3s[0].id : var.hcloud_ssh_key_id
-
-  ccm_version    = var.hetzner_ccm_version != null ? var.hetzner_ccm_version : data.github_release.hetzner_ccm[0].release_tag
-  csi_version    = var.hetzner_csi_version != null ? var.hetzner_csi_version : data.github_release.hetzner_csi[0].release_tag
   kured_version  = var.kured_version != null ? var.kured_version : data.github_release.kured[0].release_tag
   calico_version = var.calico_version != null ? var.calico_version : data.github_release.calico[0].release_tag
 
@@ -56,8 +50,9 @@ locals {
       for node_index in range(nodepool_obj.count) :
       format("%s-%s-%s", pool_index, node_index, nodepool_obj.name) => {
         nodepool_name : nodepool_obj.name,
-        server_type : nodepool_obj.server_type,
-        location : nodepool_obj.location,
+        ipv4_address : nodepool_obj.ipv4_address,
+        network_interface : nodepool_obj.network_interface,
+        os_device : nodepool_obj.os_device,
         labels : concat(local.default_control_plane_labels, nodepool_obj.labels),
         taints : concat(local.default_control_plane_taints, nodepool_obj.taints),
         index : node_index
@@ -70,9 +65,10 @@ locals {
       for node_index in range(nodepool_obj.count) :
       format("%s-%s-%s", pool_index, node_index, nodepool_obj.name) => {
         nodepool_name : nodepool_obj.name,
-        server_type : nodepool_obj.server_type,
+        ipv4_address : nodepool_obj.ipv4_address,
+        network_interface : nodepool_obj.network_interface,
+        os_device : nodepool_obj.os_device,
         longhorn_volume_size : lookup(nodepool_obj, "longhorn_volume_size", 0),
-        location : nodepool_obj.location,
         labels : concat(local.default_agent_labels, nodepool_obj.labels),
         taints : concat(local.default_agent_taints, nodepool_obj.taints),
         index : node_index
@@ -99,11 +95,16 @@ locals {
   ingress_replica_count = (var.ingress_replica_count > 0) ? var.ingress_replica_count : (local.agent_count > 2) ? 3 : (local.agent_count == 2) ? 2 : 1
 
   # disable k3s extras
-  disable_extras = concat(["local-storage"], local.using_klipper_lb ? [] : ["servicelb"], ["traefik"], var.enable_metrics_server ? [] : ["metrics-server"])
+  disable_extras = concat(
+    ["local-storage"],
+    local.using_klipper_lb ? [] : ["servicelb"],
+    var.ingress_controller != "traefik" ? [] : ["traefik"],
+    var.enable_metrics_server ? [] : ["metrics-server"],
+  )
 
   # Default k3s node labels
   default_agent_labels         = concat([], var.automatically_upgrade_k3s ? ["k3s_upgrade=true"] : [])
-  default_control_plane_labels = concat(["node.kubernetes.io/exclude-from-external-load-balancers=${local.allow_scheduling_on_control_plane ? "true" : "false"}"], var.automatically_upgrade_k3s ? ["k3s_upgrade=true"] : [])
+  default_control_plane_labels = concat([], var.automatically_upgrade_k3s ? ["k3s_upgrade=true"] : [])
 
   allow_scheduling_on_control_plane = (local.is_single_node_cluster || local.using_klipper_lb) ? true : var.allow_scheduling_on_control_plane
 
@@ -386,20 +387,6 @@ controller:
     "use-forwarded-headers": "true"
     "compute-full-forwarded-for": "true"
     "use-proxy-protocol": "true"
-%{if !local.using_klipper_lb~}
-  service:
-    annotations:
-      "load-balancer.hetzner.cloud/name": "${var.cluster_name}"
-      "load-balancer.hetzner.cloud/use-private-ip": "true"
-      "load-balancer.hetzner.cloud/disable-private-ingress": "true"
-      "load-balancer.hetzner.cloud/ipv6-disabled": "${var.load_balancer_disable_ipv6}"
-      "load-balancer.hetzner.cloud/location": "${var.load_balancer_location}"
-      "load-balancer.hetzner.cloud/type": "${var.load_balancer_type}"
-      "load-balancer.hetzner.cloud/uses-proxyprotocol": "true"
-%{if var.lb_hostname != ""~}
-      "load-balancer.hetzner.cloud/hostname": "${var.lb_hostname}"
-%{endif~}
-%{endif~}
   EOT
 
   traefik_values = var.traefik_values != "" ? var.traefik_values : <<EOT
@@ -409,19 +396,6 @@ globalArguments: []
 service:
   enabled: true
   type: LoadBalancer
-%{if !local.using_klipper_lb~}
-  annotations:
-    "load-balancer.hetzner.cloud/name": "${var.cluster_name}"
-    "load-balancer.hetzner.cloud/use-private-ip": "true"
-    "load-balancer.hetzner.cloud/disable-private-ingress": "true"
-    "load-balancer.hetzner.cloud/ipv6-disabled": "${var.load_balancer_disable_ipv6}"
-    "load-balancer.hetzner.cloud/location": "${var.load_balancer_location}"
-    "load-balancer.hetzner.cloud/type": "${var.load_balancer_type}"
-    "load-balancer.hetzner.cloud/uses-proxyprotocol": "true"
-%{if var.lb_hostname != ""~}
-    "load-balancer.hetzner.cloud/hostname": "${var.lb_hostname}"
-%{endif~}
-%{endif~}
 ports:
   web:
 %{if var.traefik_redirect_to_https~}
@@ -455,7 +429,7 @@ additionalArguments:
   EOT
 
   rancher_values = var.rancher_values != "" ? var.rancher_values : <<EOT
-hostname: "${var.rancher_hostname != "" ? var.rancher_hostname : var.lb_hostname}"
+hostname: "${var.rancher_hostname}"
 replicas: ${length(local.control_plane_nodes)}
 bootstrapPassword: "${length(var.rancher_bootstrap_password) == 0 ? resource.random_password.rancher_bootstrap[0].result : var.rancher_bootstrap_password}"
   EOT

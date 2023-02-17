@@ -1,19 +1,21 @@
-output "ipv4_address" {
-  value = hcloud_server.server.ipv4_address
-}
+# Included for compatibility
 
-output "ipv6_address" {
-  value = hcloud_server.server.ipv6_address
+output "ipv4_address" {
+  value = var.ipv4_address
 }
 
 output "private_ipv4_address" {
-  value = hcloud_server_network.server.ip
+  value = var.ipv4_address
+}
+
+output "network_interface" {
+  value = var.network_interface
 }
 
 output "name" {
-  value = hcloud_server.server.name
+  value = local.name
 }
 
 output "id" {
-  value = hcloud_server.server.id
+  value = random_string.server.id
 }

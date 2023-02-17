@@ -8,7 +8,7 @@ write_files:
 - content: |
     BOOTPROTO='dhcp'
     STARTMODE='auto'
-  path: /etc/sysconfig/network/ifcfg-eth1
+  path: /etc/sysconfig/network/ifcfg-${networkInterface}
 
 # Disable ssh password authentication
 - content: |

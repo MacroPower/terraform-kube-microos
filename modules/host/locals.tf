@@ -14,4 +14,21 @@ locals {
 
   # the hosts name with its unique suffix attached
   name = "${var.name}-${random_string.server.id}"
+
+  cloudinit_config = templatefile(
+    "${path.module}/templates/cloud.cfg.tpl",
+    {}
+  )
+
+  cloudinit_userdata_config = templatefile(
+    "${path.module}/templates/userdata.yaml.tpl",
+    {
+      hostname          = local.name
+      sshPort           = var.ssh_port
+      sshAuthorizedKeys = concat([var.ssh_public_key], var.ssh_additional_public_keys)
+      dnsServers        = var.dns_servers
+      networkInterface  = var.network_interface
+      k3sRegistries     = var.k3s_registries
+    }
+  )
 }

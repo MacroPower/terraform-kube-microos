@@ -1,76 +1,23 @@
 module "control_planes" {
   source = "./modules/host"
 
-  providers = {
-    hcloud = hcloud,
-  }
-
   for_each = local.control_plane_nodes
 
   name                         = "${var.use_cluster_name_in_node_name ? "${var.cluster_name}-" : ""}${each.value.nodepool_name}"
-  base_domain                  = var.base_domain
-  ssh_keys                     = length(var.ssh_hcloud_key_label) > 0 ? concat([local.hcloud_ssh_key_id], data.hcloud_ssh_keys.keys_by_selector[0].ssh_keys.*.id) : [local.hcloud_ssh_key_id]
+  ipv4_address                 = each.value.ipv4_address
+  os_device                    = each.value.os_device
+  network_interface            = each.value.network_interface
   ssh_port                     = var.ssh_port
   ssh_public_key               = var.ssh_public_key
   ssh_private_key              = var.ssh_private_key
-  ssh_additional_public_keys   = length(var.ssh_hcloud_key_label) > 0 ? concat(var.ssh_additional_public_keys, data.hcloud_ssh_keys.keys_by_selector[0].ssh_keys.*.public_key) : var.ssh_additional_public_keys
-  firewall_ids                 = [hcloud_firewall.k3s.id]
-  placement_group_id           = var.placement_group_disable ? 0 : hcloud_placement_group.control_plane[floor(each.value.index / 10)].id
-  location                     = each.value.location
-  server_type                  = each.value.server_type
-  ipv4_subnet_id               = hcloud_network_subnet.control_plane[[for i, v in var.control_plane_nodepools : i if v.name == each.value.nodepool_name][0]].id
+  ssh_additional_public_keys   = var.ssh_additional_public_keys
   packages_to_install          = local.packages_to_install
   dns_servers                  = var.dns_servers
   k3s_registries               = var.k3s_registries
   k3s_registries_update_script = local.k3s_registries_update_script
   opensuse_microos_mirror_link = var.opensuse_microos_mirror_link
 
-  # We leave some room so 100 eventual Hetzner LBs that can be created perfectly safely
-  # It leaves the subnet with 254 x 254 - 100 = 64416 IPs to use, so probably enough.
-  private_ipv4 = cidrhost(hcloud_network_subnet.control_plane[[for i, v in var.control_plane_nodepools : i if v.name == each.value.nodepool_name][0]].ip_range, each.value.index + 101)
-
-  labels = merge(local.labels, local.labels_control_plane_node)
-
   automatically_upgrade_os = var.automatically_upgrade_os
-
-  depends_on = [
-    hcloud_network_subnet.control_plane
-  ]
-}
-
-resource "hcloud_load_balancer" "control_plane" {
-  count = var.use_control_plane_lb ? 1 : 0
-  name  = "${var.cluster_name}-control-plane"
-
-  load_balancer_type = var.load_balancer_type
-  location           = var.load_balancer_location
-  labels             = merge(local.labels, local.labels_control_plane_lb)
-}
-
-resource "hcloud_load_balancer_network" "control_plane" {
-  count = var.use_control_plane_lb ? 1 : 0
-
-  load_balancer_id = hcloud_load_balancer.control_plane.*.id[0]
-  subnet_id        = hcloud_network_subnet.control_plane.*.id[0]
-}
-
-resource "hcloud_load_balancer_target" "control_plane" {
-  count = var.use_control_plane_lb ? 1 : 0
-
-  depends_on       = [hcloud_load_balancer_network.control_plane]
-  type             = "label_selector"
-  load_balancer_id = hcloud_load_balancer.control_plane.*.id[0]
-  label_selector   = join(",", [for k, v in merge(local.labels, local.labels_control_plane_node) : "${k}=${v}"])
-  use_private_ip   = true
-}
-
-resource "hcloud_load_balancer_service" "control_plane" {
-  count = var.use_control_plane_lb ? 1 : 0
-
-  load_balancer_id = hcloud_load_balancer.control_plane.*.id[0]
-  protocol         = "tcp"
-  destination_port = "6443"
-  listen_port      = "6443"
 }
 
 resource "null_resource" "control_planes" {
@@ -95,7 +42,6 @@ resource "null_resource" "control_planes" {
         {
           node-name = module.control_planes[each.key].name
           server = length(module.control_planes) == 1 ? null : "https://${
-            var.use_control_plane_lb ? hcloud_load_balancer_network.control_plane.*.ip[0] :
             module.control_planes[each.key].private_ipv4_address == module.control_planes[keys(module.control_planes)[0]].private_ipv4_address ?
             module.control_planes[keys(module.control_planes)[1]].private_ipv4_address :
           module.control_planes[keys(module.control_planes)[0]].private_ipv4_address}:6443"
@@ -104,7 +50,7 @@ resource "null_resource" "control_planes" {
           disable                     = local.disable_extras
           kubelet-arg                 = local.kubelet_arg
           kube-controller-manager-arg = local.kube_controller_manager_arg
-          flannel-iface               = local.flannel_iface
+          flannel-iface               = module.control_planes[each.key].network_interface
           node-ip                     = module.control_planes[each.key].private_ipv4_address
           advertise-address           = module.control_planes[each.key].private_ipv4_address
           node-label                  = each.value.labels
@@ -112,9 +58,7 @@ resource "null_resource" "control_planes" {
           write-kubeconfig-mode       = "0644" # needed for import into rancher
         },
         lookup(local.cni_k3s_settings, var.cni_plugin, {}),
-        var.use_control_plane_lb ? {
-          tls-san = concat([hcloud_load_balancer.control_plane.*.ipv4[0], hcloud_load_balancer_network.control_plane.*.ip[0]], var.additional_tls_sans)
-          } : {
+        {
           tls-san = concat([
             module.control_planes[each.key].ipv4_address
           ], var.additional_tls_sans)
@@ -150,6 +94,5 @@ resource "null_resource" "control_planes" {
 
   depends_on = [
     null_resource.first_control_plane,
-    hcloud_network_subnet.control_plane
   ]
 }
