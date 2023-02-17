@@ -58,15 +58,11 @@ resource "null_resource" "k3s_host" {
       "wget --timeout=5 --waitretry=5 --tries=5 --retry-connrefused --inet4-only ${var.opensuse_microos_mirror_link}",
       "apt-get update",
       "apt-get install -y libguestfs-tools",
+      "qemu-img convert -p -f qcow2 -O host_device $(ls -a | grep -ie '^opensuse.*microos.*qcow2$') ${var.os_device}",
       "mkdir -p /mnt/disk",
-      "guestmount -a $(ls -a | grep -ie '^opensuse.*microos.*qcow2$') -m \"/dev/sda3:/:subvol=@/root\" --rw /mnt/disk",
-      "mkdir -p /mnt/disk/.ssh",
-      "chmod 700 /mnt/disk/.ssh",
+      "mount -o rw,subvol=@/root ${var.os_device}3 /mnt/disk",
       "echo \"${var.ssh_public_key}\" | tee /mnt/disk/.ssh/authorized_keys",
       "chmod 600 /mnt/disk/.ssh/authorized_keys",
-      "guestunmount /mnt/disk",
-      "sleep 3",
-      "qemu-img convert -p -f qcow2 -O host_device $(ls -a | grep -ie '^opensuse.*microos.*qcow2$') ${var.os_device}",
     ]
   }
 
