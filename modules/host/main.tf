@@ -52,7 +52,7 @@ resource "null_resource" "pre_k3s_host" {
         "mount -o rw,subvol=@/root ${var.os_device}3 /mnt/disk",
       ],
       formatlist(
-        "echo \"%s\" | tee /mnt/disk/.ssh/authorized_keys", concat([var.ssh_public_key], var.ssh_additional_public_keys)
+        "echo \"%s\" | tee -a /mnt/disk/.ssh/authorized_keys", concat([var.ssh_public_key], var.ssh_additional_public_keys)
       ),
       [
         "chmod 600 /mnt/disk/.ssh/authorized_keys",
