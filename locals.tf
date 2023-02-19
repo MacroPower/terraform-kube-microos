@@ -98,7 +98,7 @@ locals {
   disable_extras = concat(
     ["local-storage"],
     local.using_klipper_lb ? [] : ["servicelb"],
-    var.ingress_controller != "traefik" ? [] : ["traefik"],
+    var.ingress_controller == "traefik" ? [] : ["traefik"],
     var.enable_metrics_server ? [] : ["metrics-server"],
   )
 
