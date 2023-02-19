@@ -8,7 +8,7 @@ body:
       value: |
         **Kube-Hetzner Feature Request**
 
-        For feature exploration, please use our [discussions](https://github.com/kube-hetzner/terraform-hcloud-kube-hetzner/discussions) section. However, if you judge something to be extremely important or urgent, please let us know what you need and why, and even share tips on implementation.
+        For feature exploration, please use our [discussions](https://github.com/MacroPower/terraform-kube-microos/discussions) section. However, if you judge something to be extremely important or urgent, please let us know what you need and why, and even share tips on implementation.
 
         Also please know that we are very open to PRs and will work with you to make it happen if fully relevent to the project. So if you can make it happen, and it falls within the project, please do not hesitate to ping us in the discussions about your idea.
   - type: textarea

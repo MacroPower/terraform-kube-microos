@@ -15,7 +15,7 @@ module "kube-hetzner" {
   # * For local dev, path to the git repo
   # source = "../../kube-hetzner/"
   # If you want to use the latest master branch
-  # source = "github.com/kube-hetzner/terraform-hcloud-kube-hetzner"
+  # source = "github.com/MacroPower/terraform-kube-microos"
   # For normal use, this is the path to the terraform registry
   source = "kube-hetzner/kube-hetzner/hcloud"
 
@@ -170,7 +170,7 @@ module "kube-hetzner" {
   # }
 
   # To use local storage on the nodes, you can enable Longhorn, default is "false".
-  # See a full recap on how to configure agent nodepools for longhorn here https://github.com/kube-hetzner/terraform-hcloud-kube-hetzner/discussions/373#discussioncomment-3983159
+  # See a full recap on how to configure agent nodepools for longhorn here https://github.com/MacroPower/terraform-kube-microos/discussions/373#discussioncomment-3983159
   # enable_longhorn = true
 
   # The file system type for Longhorn, if enabled (ext4 is the default, otherwise you can choose xfs)
@@ -279,7 +279,7 @@ module "kube-hetzner" {
 
   # If you want to configure a different CNI for k3s, use this flag
   # possible values: flannel (Default), calico, and cilium
-  # As for Cilium, we allow infinite configurations via helm values, please check the CNI section of the readme over at https://github.com/kube-hetzner/terraform-hcloud-kube-hetzner/#cni.
+  # As for Cilium, we allow infinite configurations via helm values, please check the CNI section of the readme over at https://github.com/MacroPower/terraform-kube-microos/#cni.
   # Also, see the cilium_values at towards the end of this file, in the advanced section.
   # cni_plugin = "cilium"
 
@@ -340,7 +340,7 @@ module "kube-hetzner" {
   # extra_kustomize_parameters={}
 
   # It is best practice to turn this off, but for backwards compatibility it is set to "true" by default. 
-  # See https://github.com/kube-hetzner/terraform-hcloud-kube-hetzner/issues/349
+  # See https://github.com/MacroPower/terraform-kube-microos/issues/349
   # When "false". The kubeconfig file can instead be created by executing: "terraform output --raw kubeconfig > cluster_kubeconfig.yaml"
   # Always be careful to not commit this file!
   # create_kubeconfig = false

@@ -99,7 +99,7 @@ resource "null_resource" "k3s_host" {
     inline = [<<-EOT
       set -ex
 
-      transactional-update shell <<< "zypper --no-gpg-checks --non-interactive install https://github.com/kube-hetzner/terraform-hcloud-kube-hetzner/raw/master/.extra/k3s-selinux-next.rpm"
+      transactional-update shell <<< "zypper --no-gpg-checks --non-interactive install https://github.com/MacroPower/terraform-kube-microos/raw/master/.extra/k3s-selinux-next.rpm"
       transactional-update --continue shell <<< "zypper --gpg-auto-import-keys install -y ${local.needed_packages}"
       transactional-update --continue shell <<< "
       ls -l /etc/cloud/cloud.cfg.d && \
