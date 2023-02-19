@@ -77,6 +77,13 @@ resource "null_resource" "pre_k3s_host" {
       done
     EOT
   }
+
+  # Cleanup ssh identity file
+  provisioner "local-exec" {
+    command = <<-EOT
+      rm /tmp/${random_string.identity_file.id}
+    EOT
+  }
 }
 
 resource "null_resource" "k3s_host" {
@@ -90,6 +97,14 @@ resource "null_resource" "k3s_host" {
     agent_identity = local.ssh_agent_identity
     host           = var.ipv4_address
     port           = var.ssh_port
+  }
+
+  # Prepare ssh identity file
+  provisioner "local-exec" {
+    command = <<-EOT
+      install -b -m 600 /dev/null /tmp/${random_string.identity_file.id}
+      echo "${local.ssh_client_identity}" > /tmp/${random_string.identity_file.id}
+    EOT
   }
 
   provisioner "remote-exec" {
