@@ -53,17 +53,23 @@ resource "null_resource" "k3s_host" {
       port = 22
     }
 
-    inline = [
-      "set -ex",
-      "wget --timeout=5 --waitretry=5 --tries=5 --retry-connrefused --inet4-only ${var.opensuse_microos_mirror_link}",
-      "apt-get update",
-      "apt-get install -y libguestfs-tools",
-      "qemu-img convert -p -f qcow2 -O host_device $(ls -a | grep -ie '^opensuse.*microos.*qcow2$') ${var.os_device}",
-      "mkdir -p /mnt/disk",
-      "mount -o rw,subvol=@/root ${var.os_device}3 /mnt/disk",
-      "echo \"${var.ssh_public_key}\" | tee /mnt/disk/.ssh/authorized_keys",
-      "chmod 600 /mnt/disk/.ssh/authorized_keys",
-    ]
+    inline = concat(
+      [
+        "set -ex",
+        "wget --timeout=5 --waitretry=5 --tries=5 --retry-connrefused --inet4-only ${var.opensuse_microos_mirror_link}",
+        "apt-get update",
+        "apt-get install -y libguestfs-tools",
+        "qemu-img convert -p -f qcow2 -O host_device $(ls -a | grep -ie '^opensuse.*microos.*qcow2$') ${var.os_device}",
+        "mkdir -p /mnt/disk",
+        "mount -o rw,subvol=@/root ${var.os_device}3 /mnt/disk",
+      ],
+      formatlist(
+        "echo \"%s\" | tee /mnt/disk/.ssh/authorized_keys", concat([var.ssh_public_key], var.ssh_additional_public_keys)
+      ),
+      [
+        "chmod 600 /mnt/disk/.ssh/authorized_keys",
+      ],
+    )
   }
 
   # Issue a reboot command.
