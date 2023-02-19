@@ -306,7 +306,7 @@ locals {
     },
   var.etcd_s3_backup) : {}
 
-  kubelet_arg                 = ["cloud-provider=external", "volume-plugin-dir=/var/lib/kubelet/volumeplugins"]
+  kubelet_arg                 = ["volume-plugin-dir=/var/lib/kubelet/volumeplugins"]
   kube_controller_manager_arg = "flex-volume-plugin-dir=/var/lib/kubelet/volumeplugins"
   flannel_iface               = "eth1"
 
