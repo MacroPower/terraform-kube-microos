@@ -19,17 +19,16 @@ resource "random_string" "identity_file" {
   upper   = false
 }
 
-resource "null_resource" "k3s_host" {
-  lifecycle {
-    create_before_destroy = true
-  }
-
+resource "null_resource" "pre_k3s_host" {
   connection {
     user           = "root"
     private_key    = var.ssh_private_key
     agent_identity = local.ssh_agent_identity
     host           = var.ipv4_address
-    port           = var.ssh_port
+
+    # We cannot use different ports here as this runs inside Hetzner Rescue image and thus uses the
+    # standard 22 TCP port.
+    port = 22
   }
 
   # Prepare ssh identity file
@@ -42,17 +41,6 @@ resource "null_resource" "k3s_host" {
 
   # Install MicroOS
   provisioner "remote-exec" {
-    connection {
-      user           = "root"
-      private_key    = var.ssh_private_key
-      agent_identity = local.ssh_agent_identity
-      host           = var.ipv4_address
-
-      # We cannot use different ports here as this runs inside Hetzner Rescue image and thus uses the
-      # standard 22 TCP port.
-      port = 22
-    }
-
     inline = concat(
       [
         "set -ex",
@@ -89,14 +77,23 @@ resource "null_resource" "k3s_host" {
       done
     EOT
   }
+}
+
+resource "null_resource" "k3s_host" {
+  depends_on = [
+    null_resource.pre_k3s_host,
+  ]
+
+  connection {
+    user           = "root"
+    private_key    = var.ssh_private_key
+    agent_identity = local.ssh_agent_identity
+    host           = var.ipv4_address
+    port           = var.ssh_port
+  }
 
   provisioner "remote-exec" {
     connection {
-      user           = "root"
-      private_key    = var.ssh_private_key
-      agent_identity = local.ssh_agent_identity
-      host           = var.ipv4_address
-
       # We cannot use different ports here as this is pre cloud-init and thus uses the
       # standard 22 TCP port.
       port = 22
