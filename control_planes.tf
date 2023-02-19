@@ -96,3 +96,44 @@ resource "null_resource" "control_planes" {
     null_resource.first_control_plane,
   ]
 }
+
+locals {
+  control_planes_longhorn_devices = flatten([
+    for k, v in local.control_plane_nodes : [
+      for device in v.longhorn_devices : {
+        control_plane = k
+        ipv4_address  = v.ipv4_address
+        device        = device
+        name          = "longhorn${replace(device, "/\\//", "_")}"
+      }
+    ]
+  ])
+}
+
+resource "null_resource" "control_planes_longhorn_volumes" {
+  for_each = { for x in local.control_planes_longhorn_devices : "${x.control_plane}-${x.device}" => x }
+
+  triggers = {
+    control_plane_id = module.control_planes[each.value.control_plane].id
+  }
+
+  # Start the k3s agent and wait for it to have started
+  provisioner "remote-exec" {
+    inline = [
+      "${var.longhorn_fstype == "ext4" ? "mkfs.ext4" : "mkfs.xfs"} ${each.value.device}",
+      "mkdir /var/${each.value.name} >/dev/null 2>&1",
+      "mount -o discard,defaults ${each.value.device} /var/${each.value.name}",
+      "mount -o discard,defaults ${each.value.device} /var/${each.value.name}",
+      "${var.longhorn_fstype == "ext4" ? "resize2fs" : "xfs_growfs"} ${each.value.device}",
+      "echo '${each.value.device} /var/longhorn${each.value.name} ${var.longhorn_fstype} discard,nofail,defaults 0 0' >> /etc/fstab",
+    ]
+  }
+
+  connection {
+    user           = "root"
+    private_key    = var.ssh_private_key
+    agent_identity = local.ssh_agent_identity
+    host           = each.value.ipv4_address
+    port           = var.ssh_port
+  }
+}
