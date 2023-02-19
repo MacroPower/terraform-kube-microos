@@ -96,7 +96,7 @@ locals {
 
   # disable k3s extras
   disable_extras = concat(
-    ["local-storage"],
+    var.enable_local_storage ? [] : ["local-storage"],
     local.using_klipper_lb ? [] : ["servicelb"],
     var.ingress_controller == "traefik" ? [] : ["traefik"],
     var.enable_metrics_server ? [] : ["metrics-server"],

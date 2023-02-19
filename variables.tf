@@ -63,6 +63,12 @@ variable "enable_klipper_metal_lb" {
   description = "Use klipper load balancer."
 }
 
+variable "enable_local_storage" {
+  type        = bool
+  default     = false
+  description = "Enable k3s local storage."
+}
+
 variable "etcd_s3_backup" {
   description = "Etcd cluster state backup to S3 storage"
   type        = map(any)
