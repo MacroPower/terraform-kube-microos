@@ -14,4 +14,5 @@ locals {
   # the hosts name with its unique suffix attached
   name = "${var.name}-${random_string.server.id}"
 
+  root_device = length(regexall(".+[0-9]$", var.os_device)) > 0 ? "${var.os_device}p3" : "${var.os_device}3"
 }

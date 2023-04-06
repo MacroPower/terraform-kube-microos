@@ -49,7 +49,7 @@ resource "null_resource" "pre_k3s_host" {
         "apt-get install -y libguestfs-tools",
         "qemu-img convert -p -f qcow2 -O host_device $(ls -a | grep -ie '^opensuse.*microos.*qcow2$') ${var.os_device}",
         "mkdir -p /mnt/disk",
-        "mount -o rw,subvol=@/root ${var.os_device}3 /mnt/disk",
+        "mount -o rw,subvol=@/root ${local.root_device} /mnt/disk",
       ],
       formatlist(
         "echo \"%s\" | tee -a /mnt/disk/.ssh/authorized_keys", concat([var.ssh_public_key], var.ssh_additional_public_keys)
