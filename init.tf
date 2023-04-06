@@ -24,6 +24,7 @@ resource "null_resource" "first_control_plane" {
           advertise-address           = module.control_planes[keys(module.control_planes)[0]].private_ipv4_address
           node-taint                  = local.control_plane_nodes[keys(module.control_planes)[0]].taints
           node-label                  = local.control_plane_nodes[keys(module.control_planes)[0]].labels
+          selinux                     = true
         },
         lookup(local.cni_k3s_settings, var.cni_plugin, {}),
         {
@@ -79,6 +80,31 @@ resource "random_password" "rancher_bootstrap" {
 
 # This is where all the setup of Kubernetes components happen
 resource "null_resource" "kustomization" {
+  triggers = {
+    # Redeploy helm charts when the underlying values change
+    helm_values_yaml = join("---\n", [
+      local.traefik_values,
+      local.nginx_values,
+      local.calico_values,
+      local.cilium_values,
+      local.longhorn_values,
+      local.csi_driver_smb_values,
+      local.cert_manager_values,
+      local.rancher_values
+    ])
+    # Redeploy when versions of addons need to be updated
+    versions = join("\n", [
+      coalesce(var.cluster_autoscaler_version, "N/A"),
+      coalesce(var.hetzner_ccm_version, "N/A"),
+      coalesce(var.hetzner_csi_version, "N/A"),
+      coalesce(var.kured_version, "N/A"),
+      coalesce(var.calico_version, "N/A"),
+    ])
+    options = join("\n", [
+      for option, value in var.kured_options : "${option}=${value}"
+    ])
+  }
+
   connection {
     user           = "root"
     private_key    = var.ssh_private_key
@@ -104,6 +130,7 @@ resource "null_resource" "kustomization" {
         lookup(local.ingress_controller_install_resources, local.ingress_controller, []),
         lookup(local.cni_install_resources, var.cni_plugin, []),
         var.enable_longhorn ? ["longhorn.yaml"] : [],
+        var.enable_csi_driver_smb ? ["csi-driver-smb.yaml"] : [],
         var.enable_cert_manager || var.enable_rancher ? ["cert_manager.yaml"] : [],
         var.enable_rancher ? ["rancher.yaml"] : [],
         var.rancher_registration_manifest_url != "" ? [var.rancher_registration_manifest_url] : []
@@ -182,6 +209,16 @@ resource "null_resource" "kustomization" {
     destination = "/var/post_install/longhorn.yaml"
   }
 
+  # Upload the csi-driver-smb config
+  provisioner "file" {
+    content = templatefile(
+      "${path.module}/templates/csi-driver-smb.yaml.tpl",
+      {
+        values = indent(4, trimspace(local.csi_driver_smb_values))
+    })
+    destination = "/var/post_install/csi-driver-smb.yaml"
+  }
+
   # Upload the cert-manager config
   provisioner "file" {
     content = templatefile(
@@ -231,7 +268,7 @@ resource "null_resource" "kustomization" {
       # Wait for k3s to become ready (we check one more time) because in some edge cases,
       # the cluster had become unvailable for a few seconds, at this very instant.
       <<-EOT
-      timeout 180 bash <<EOF
+      timeout 360 bash <<EOF
         until [[ "\$(kubectl get --raw='/readyz' 2> /dev/null)" == "ok" ]]; do
           echo "Waiting for the cluster to become ready..."
           sleep 2
@@ -245,8 +282,8 @@ resource "null_resource" "kustomization" {
         # Ready, set, go for the kustomization
         "kubectl apply -k /var/post_install",
         "echo 'Waiting for the system-upgrade-controller deployment to become available...'",
-        "kubectl -n system-upgrade wait --for=condition=available --timeout=180s deployment/system-upgrade-controller",
-        "sleep 5", # important as the system upgrade controller CRDs sometimes don't get ready right away, especially with Cilium.
+        "kubectl -n system-upgrade wait --for=condition=available --timeout=360s deployment/system-upgrade-controller",
+        "sleep 7", # important as the system upgrade controller CRDs sometimes don't get ready right away, especially with Cilium.
         "kubectl -n system-upgrade apply -f /var/post_install/plans.yaml"
       ]
     )

@@ -28,16 +28,57 @@ variable "ssh_additional_public_keys" {
 
 variable "control_plane_nodepools" {
   description = "Number of control plane nodes."
-  type        = list(any)
-  default     = []
+  type = list(object({
+    name        = string
+    server_type = string
+    location    = string
+    backups     = optional(bool)
+    labels      = list(string)
+    taints      = list(string)
+    count       = number
+  }))
+  default = []
 }
 
 variable "agent_nodepools" {
   description = "Number of agent nodes."
-  type        = list(any)
-  default     = []
+  type = list(object({
+    name                 = string
+    server_type          = string
+    location             = string
+    backups              = optional(bool)
+    floating_ip          = optional(bool)
+    labels               = list(string)
+    taints               = list(string)
+    count                = number
+    longhorn_volume_size = optional(number)
+  }))
+  default = []
 }
 
+variable "cluster_autoscaler_image" {
+  type        = string
+  default     = "registry.k8s.io/autoscaling/cluster-autoscaler"
+  description = "Image of Kubernetes Cluster Autoscaler for Hetzner Cloud to be used."
+}
+
+variable "cluster_autoscaler_version" {
+  type        = string
+  default     = "v1.26.2"
+  description = "Version of Kubernetes Cluster Autoscaler for Hetzner Cloud. Should be aligned with Kubernetes version"
+}
+
+variable "autoscaler_nodepools" {
+  description = "Cluster autoscaler nodepools."
+  type = list(object({
+    name        = string
+    server_type = string
+    location    = string
+    min_nodes   = number
+    max_nodes   = number
+  }))
+  default = []
+}
 
 variable "hetzner_ccm_version" {
   type        = string
@@ -131,17 +172,17 @@ variable "allow_scheduling_on_control_plane" {
 variable "enable_metrics_server" {
   type        = bool
   default     = true
-  description = "Whether to enable or disbale k3s mertric server."
+  description = "Whether to enable or disable k3s metric server."
 }
 
 variable "initial_k3s_channel" {
   type        = string
-  default     = "v1.25"
+  default     = "v1.26"
   description = "Allows you to specify an initial k3s channel."
 
   validation {
     condition     = contains(["stable", "latest", "testing", "v1.16", "v1.17", "v1.18", "v1.19", "v1.20", "v1.21", "v1.22", "v1.23", "v1.24", "v1.25", "v1.26"], var.initial_k3s_channel)
-    error_message = "The initial k3s channel must be one of stable, latest or testing, or any of the minor kube versions like v1.22."
+    error_message = "The initial k3s channel must be one of stable, latest or testing, or any of the minor kube versions like v1.26."
   }
 }
 
@@ -225,16 +266,19 @@ variable "enable_longhorn" {
   default     = false
   description = "Whether or not to enable Longhorn."
 }
+
 variable "longhorn_repository" {
   type        = string
   default     = "https://charts.longhorn.io"
   description = "By default the official chart which may be incompatible with rancher is used. If you need to fully support rancher switch to https://charts.rancher.io."
 }
+
 variable "longhorn_namespace" {
   type        = string
   default     = "longhorn-system"
   description = "Namespace for longhorn deployment, defaults to 'longhorn-system'"
 }
+
 variable "longhorn_fstype" {
   type        = string
   default     = "ext4"
@@ -267,6 +311,18 @@ variable "disable_hetzner_csi" {
   type        = bool
   default     = false
   description = "Disable hetzner csi driver."
+}
+
+variable "enable_csi_driver_smb" {
+  type        = bool
+  default     = false
+  description = "Whether or not to enable csi-driver-smb."
+}
+
+variable "csi_driver_smb_values" {
+  type        = string
+  default     = ""
+  description = "Additional helm values file to pass to csi-driver-smb as 'valuesContent' at the HelmChart."
 }
 
 variable "enable_cert_manager" {
@@ -359,8 +415,13 @@ variable "use_control_plane_lb" {
 
 variable "dns_servers" {
   type        = list(string)
-  default     = ["8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1"]
-  description = "IP Addresses to use for the DNS Servers, set to an empty list to use the ones provided by Hetzner."
+  default     = ["1.1.1.1", "8.8.8.8", "9.9.9.9"]
+  description = "IP Addresses to use for the DNS Servers, set to an empty list to use the ones provided by Hetzner. The length is limited to 3 entries, more entries is not supported by kubernetes"
+
+  validation {
+    condition     = length(var.dns_servers) <= 3
+    error_message = "The list must have no more than 3 items."
+  }
 }
 
 variable "additional_k3s_environment" {
@@ -373,13 +434,6 @@ variable "preinstall_exec" {
   type        = list(string)
   default     = []
   description = "Additional to execute before the install calls, for example fetching and installing certs."
-}
-
-
-variable "extra_packages_to_install" {
-  type        = list(string)
-  default     = []
-  description = "A list of additional packages to install on nodes."
 }
 
 variable "extra_kustomize_parameters" {
@@ -416,17 +470,6 @@ variable "k3s_registries" {
   description = "K3S registries.yml contents. It used to access private docker registries."
   default     = " "
   type        = string
-}
-
-variable "opensuse_microos_mirror_link" {
-  description = "The mirror link to use for the opensuse microos image."
-  default     = "https://mirror.dogado.de/opensuse/tumbleweed/appliances/openSUSE-MicroOS.x86_64-OpenStack-Cloud.qcow2"
-  type        = string
-
-  validation {
-    condition     = can(regex("^https.*openSUSE-MicroOS\\.x86_64[\\-0-9\\.]*-OpenStack-Cloud.*\\.qcow2$", var.opensuse_microos_mirror_link))
-    error_message = "You need to use a mirror link from https://download.opensuse.org/tumbleweed/appliances/openSUSE-MicroOS.x86_64-OpenStack-Cloud.qcow2.mirrorlist"
-  }
 }
 
 variable "additional_tls_sans" {

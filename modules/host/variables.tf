@@ -72,3 +72,13 @@ variable "opensuse_microos_mirror_link" {
   default = "https://download.opensuse.org/tumbleweed/appliances/openSUSE-MicroOS.x86_64-OpenStack-Cloud.qcow2"
   type    = string
 }
+
+variable "cloudinit_write_files_common" {
+  default = ""
+  type    = string
+}
+
+variable "cloudinit_runcmd_common" {
+  default = ""
+  type    = string
+}

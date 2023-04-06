@@ -116,21 +116,14 @@ resource "null_resource" "k3s_host" {
 
     inline = [<<-EOT
       set -ex
-
-      transactional-update shell <<< "zypper --no-gpg-checks --non-interactive install https://github.com/MacroPower/terraform-kube-microos/raw/master/.extra/k3s-selinux-next.rpm"
+      echo "First reboot successful, installing needed packages..."
+      transactional-update shell <<< "setenforce 0"
       transactional-update --continue shell <<< "zypper --gpg-auto-import-keys install -y ${local.needed_packages}"
-      transactional-update --continue shell <<< "
-      ls -l /etc/cloud/cloud.cfg.d && \
-      { tee /etc/cloud/cloud.cfg << EOFCLOUDCFG
-${replace(local.cloudinit_config, "\"", "\\\"")}
-EOFCLOUDCFG
-      } && \
-      { tee /etc/cloud/cloud.cfg.d/init.cfg << EOFCLOUDUSERDATA
-${replace(local.cloudinit_userdata_config, "\"", "\\\"")}
-EOFCLOUDUSERDATA
-      }"
-      transactional-update --continue shell <<< "cloud-init init --local"
-      sleep 1 && udevadm settle
+      transactional-update --continue shell <<< "rpm --import https://rpm-testing.rancher.io/public.key"
+      transactional-update --continue shell <<< "zypper --no-gpg-checks --non-interactive install https://github.com/k3s-io/k3s-selinux/releases/download/v1.3.testing.4/k3s-selinux-1.3-4.sle.noarch.rpm"
+      transactional-update --continue shell <<< "zypper addlock k3s-selinux"
+      transactional-update --continue shell <<< "restorecon -Rv /etc/selinux/targeted/policy && restorecon -Rv /var/lib && setenforce 1"
+      sleep 1 && udevadm settle && reboot
       EOT
     ]
   }
@@ -160,17 +153,6 @@ EOFCLOUDUSERDATA
     EOT
   }
 
-  # Enable open-iscsi
-  provisioner "remote-exec" {
-    inline = [
-      <<-EOT
-      set -ex
-      if [[ $(systemctl list-units --all -t service --full --no-legend "iscsid.service" | sed 's/^\s*//g' | cut -f1 -d' ') == iscsid.service ]]; then
-        systemctl enable --now iscsid
-      fi
-      EOT
-    ]
-  }
 
   provisioner "remote-exec" {
     inline = var.automatically_upgrade_os ? [
@@ -192,5 +174,25 @@ EOFCLOUDUSERDATA
 
   provisioner "remote-exec" {
     inline = [var.k3s_registries_update_script]
+  }
+}
+
+data "cloudinit_config" "config" {
+  gzip          = true
+  base64_encode = true
+
+  # Main cloud-config configuration file.
+  part {
+    filename     = "init.cfg"
+    content_type = "text/cloud-config"
+    content = templatefile(
+      "${path.module}/templates/cloudinit.yaml.tpl",
+      {
+        hostname                     = local.name
+        sshAuthorizedKeys            = concat([var.ssh_public_key], var.ssh_additional_public_keys)
+        cloudinit_write_files_common = var.cloudinit_write_files_common
+        cloudinit_runcmd_common      = var.cloudinit_runcmd_common
+      }
+    )
   }
 }

@@ -37,6 +37,8 @@ properly. Nothing here will be kept after Terraform is run for the first time.
 
 Once in the installer, press CTRL+ALT+F2. Then, run the following:
 
+Now that you have your `kube.tf` file, along with the OS snapshot in Hetzner project, you can start the installation process:
+
 ```sh
 sudo -i
 wget -O - https://github.com/MacroPower.keys >> ~/.ssh/authorized_keys

@@ -15,7 +15,8 @@ module "control_planes" {
   dns_servers                  = var.dns_servers
   k3s_registries               = var.k3s_registries
   k3s_registries_update_script = local.k3s_registries_update_script
-  opensuse_microos_mirror_link = var.opensuse_microos_mirror_link
+  cloudinit_write_files_common = local.cloudinit_write_files_common
+  cloudinit_runcmd_common      = local.cloudinit_runcmd_common
 
   automatically_upgrade_os = var.automatically_upgrade_os
 }
@@ -55,6 +56,7 @@ resource "null_resource" "control_planes" {
           advertise-address           = module.control_planes[each.key].private_ipv4_address
           node-label                  = each.value.labels
           node-taint                  = each.value.taints
+          selinux                     = true
           write-kubeconfig-mode       = "0644" # needed for import into rancher
         },
         lookup(local.cni_k3s_settings, var.cni_plugin, {}),

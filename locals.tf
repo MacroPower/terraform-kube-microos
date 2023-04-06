@@ -19,13 +19,15 @@ locals {
   set -a; source /etc/environment; set +a;
   EOT
 
-  common_commands_install_k3s = concat(
+  common_pre_install_k3s_commands = concat(
     [
       "set -ex",
+      # rename the private network interface to eth1
+      "/etc/cloud/rename_interface.sh",
       # prepare the k3s config directory
       "mkdir -p /etc/rancher/k3s",
       # move the config file into place and adjust permissions
-      "mv /tmp/config.yaml /etc/rancher/k3s/config.yaml",
+      "[ -f /tmp/config.yaml ] && mv /tmp/config.yaml /etc/rancher/k3s/config.yaml",
       "chmod 0600 /etc/rancher/k3s/config.yaml",
       # if the server has already been initialized just stop here
       "[ -e /etc/rancher/k3s/k3s.yaml ] && exit 0",
@@ -33,15 +35,17 @@ locals {
     ],
     # User-defined commands to execute just before installing k3s.
     var.preinstall_exec,
+    # Wait for a successful connection to the internet.
+    ["while ! ping -c 1 8.8.8.8 >/dev/null 2>&1; do echo 'Ready for k3s installation, waiting for a successful connection to the internet...'; sleep 5; done; echo 'Connected'"]
   )
 
 
   apply_k3s_selinux = ["/sbin/semodule -v -i /usr/share/selinux/packages/k3s.pp"]
 
-  install_k3s_server = concat(local.common_commands_install_k3s, [
+  install_k3s_server = concat(local.common_pre_install_k3s_commands, [
     "curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_START=true INSTALL_K3S_SKIP_SELINUX_RPM=true INSTALL_K3S_CHANNEL=${var.initial_k3s_channel} INSTALL_K3S_EXEC=server sh -"
   ], local.apply_k3s_selinux)
-  install_k3s_agent = concat(local.common_commands_install_k3s, [
+  install_k3s_agent = concat(local.common_pre_install_k3s_commands, [
     "curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_START=true INSTALL_K3S_SKIP_SELINUX_RPM=true INSTALL_K3S_CHANNEL=${var.initial_k3s_channel} INSTALL_K3S_EXEC=agent sh -"
   ], local.apply_k3s_selinux)
 
@@ -56,6 +60,7 @@ locals {
         longhorn_devices : lookup(nodepool_obj, "longhorn_devices", []),
         labels : concat(local.default_control_plane_labels, nodepool_obj.labels),
         taints : concat(local.default_control_plane_taints, nodepool_obj.taints),
+        backups : nodepool_obj.backups,
         index : node_index
       }
     }
@@ -72,17 +77,15 @@ locals {
         longhorn_devices : lookup(nodepool_obj, "longhorn_devices", []),
         labels : concat(local.default_agent_labels, nodepool_obj.labels),
         taints : concat(local.default_agent_taints, nodepool_obj.taints),
+        backups : lookup(nodepool_obj, "backups", false),
         index : node_index
       }
     }
   ]...)
 
-  # The main network cidr that all subnets will be created upon
-  network_ipv4_cidr = "10.0.0.0/8"
-
   # The first two subnets are respectively the default subnet 10.0.0.0/16 use for potientially anything and 10.1.0.0/16 used for control plane nodes.
   # the rest of the subnets are for agent nodes in each nodepools.
-  network_ipv4_subnets = [for index in range(256) : cidrsubnet(local.network_ipv4_cidr, 8, index)]
+  network_ipv4_subnets = [for index in range(256) : cidrsubnet(var.network_ipv4_cidr, 8, index)]
 
   # if we are in a single cluster config, we use the default klipper lb instead of Hetzner LB
   control_plane_count    = sum([for v in var.control_plane_nodepools : v.count])
@@ -103,32 +106,26 @@ locals {
     var.enable_metrics_server ? [] : ["metrics-server"],
   )
 
+  # Determine if scheduling should be allowed on control plane nodes, which will be always true for single node clusters and clusters using the klipper lb or if scheduling is allowed on control plane nodes
+  allow_scheduling_on_control_plane = (local.is_single_node_cluster || local.using_klipper_lb) ? true : var.allow_scheduling_on_control_plane
+  # Determine if loadbalancer target should be allowed on control plane nodes, which will be always true for single node clusters or if scheduling is allowed on control plane nodes
+  allow_loadbalancer_target_on_control_plane = local.is_single_node_cluster ? true : var.allow_scheduling_on_control_plane
+
   # Default k3s node labels
   default_agent_labels         = concat([], var.automatically_upgrade_k3s ? ["k3s_upgrade=true"] : [])
   default_control_plane_labels = concat([], var.automatically_upgrade_k3s ? ["k3s_upgrade=true"] : [])
-
-  allow_scheduling_on_control_plane = (local.is_single_node_cluster || local.using_klipper_lb) ? true : var.allow_scheduling_on_control_plane
 
   # Default k3s node taints
   default_control_plane_taints = concat([], local.allow_scheduling_on_control_plane ? [] : ["node-role.kubernetes.io/control-plane:NoSchedule"])
   default_agent_taints         = concat([], var.cni_plugin == "cilium" ? ["node.cilium.io/agent-not-ready:NoExecute"] : [])
 
-  packages_to_install = concat(
-    var.enable_wireguard ? ["wireguard-tools"] : [],
-    var.enable_longhorn ? ["open-iscsi", "nfs-client", "xfsprogs", "cryptsetup"] : [],
-    var.extra_packages_to_install,
-  )
-
   # The following IPs are important to be whitelisted because they communicate with Hetzner services and enable the CCM and CSI to work properly.
   # Source https://github.com/hetznercloud/csi-driver/issues/204#issuecomment-848625566
   hetzner_metadata_service_ipv4 = "169.254.169.254/32"
-  hetzner_cloud_api_ipv4        = "213.239.246.1/32"
-
-  # internal Pod CIDR, used for the controller and currently for calico
-  cluster_cidr_ipv4 = "10.42.0.0/16"
+  hetzner_cloud_api_ipv4        = "213.239.246.21/32"
 
   whitelisted_ips = [
-    local.network_ipv4_cidr,
+    var.network_ipv4_cidr,
     local.hetzner_metadata_service_ipv4,
     local.hetzner_cloud_api_ipv4,
     "127.0.0.1/32",
@@ -137,44 +134,50 @@ locals {
   base_firewall_rules = concat([
     # Allowing internal cluster traffic and Hetzner metadata service and cloud API IPs
     {
-      direction  = "in"
-      protocol   = "tcp"
-      port       = "any"
-      source_ips = local.whitelisted_ips
+      description = "Allow Internal Cluster TCP Traffic"
+      direction   = "in"
+      protocol    = "tcp"
+      port        = "any"
+      source_ips  = local.whitelisted_ips
     },
     {
-      direction  = "in"
-      protocol   = "udp"
-      port       = "any"
-      source_ips = local.whitelisted_ips
+      description = "Allow Internal Cluster UDP Traffic"
+      direction   = "in"
+      protocol    = "udp"
+      port        = "any"
+      source_ips  = local.whitelisted_ips
     },
 
     # Allow all traffic to the kube api server
     {
-      direction  = "in"
-      protocol   = "tcp"
-      port       = "6443"
-      source_ips = ["0.0.0.0/0", "::/0"]
+      description = "Allow Incoming Requests to Kube API Server"
+      direction   = "in"
+      protocol    = "tcp"
+      port        = "6443"
+      source_ips  = ["0.0.0.0/0", "::/0"]
     },
 
     # Allow all traffic to the ssh ports
     {
-      direction  = "in"
-      protocol   = "tcp"
-      port       = "22"
-      source_ips = ["0.0.0.0/0", "::/0"]
+      description = "Allow Incoming SSH Traffic"
+      direction   = "in"
+      protocol    = "tcp"
+      port        = "22"
+      source_ips  = ["0.0.0.0/0", "::/0"]
     }
     ], var.ssh_port == 22 ? [] : [
     {
-      direction  = "in"
-      protocol   = "tcp"
-      port       = var.ssh_port
-      source_ips = ["0.0.0.0/0", "::/0"]
+      description = "Allow Incoming SSH Traffic"
+      direction   = "in"
+      protocol    = "tcp"
+      port        = var.ssh_port
+      source_ips  = ["0.0.0.0/0", "::/0"]
     },
     ], !var.restrict_outbound_traffic ? [] : [
     # Allow basic out traffic
     # ICMP to ping outside services
     {
+      description     = "Allow Outbound ICMP Ping Requests"
       direction       = "out"
       protocol        = "icmp"
       port            = ""
@@ -183,12 +186,14 @@ locals {
 
     # DNS
     {
+      description     = "Allow Outbound TCP DNS Requests"
       direction       = "out"
       protocol        = "tcp"
       port            = "53"
       destination_ips = ["0.0.0.0/0", "::/0"]
     },
     {
+      description     = "Allow Outbound UDP DNS Requests"
       direction       = "out"
       protocol        = "udp"
       port            = "53"
@@ -197,12 +202,14 @@ locals {
 
     # HTTP(s)
     {
+      description     = "Allow Outbound HTTP Requests"
       direction       = "out"
       protocol        = "tcp"
       port            = "80"
       destination_ips = ["0.0.0.0/0", "::/0"]
     },
     {
+      description     = "Allow Outbound HTTPS Requests"
       direction       = "out"
       protocol        = "tcp"
       port            = "443"
@@ -211,6 +218,7 @@ locals {
 
     #NTP
     {
+      description     = "Allow Outbound UDP NTP Requests"
       direction       = "out"
       protocol        = "udp"
       port            = "123"
@@ -220,30 +228,34 @@ locals {
     # Allow incoming web traffic for single node clusters, because we are using k3s servicelb there,
     # not an external load-balancer.
     {
-      direction  = "in"
-      protocol   = "tcp"
-      port       = "80"
-      source_ips = ["0.0.0.0/0", "::/0"]
+      description = "Allow Incoming HTTP Connections"
+      direction   = "in"
+      protocol    = "tcp"
+      port        = "80"
+      source_ips  = ["0.0.0.0/0", "::/0"]
     },
     {
-      direction  = "in"
-      protocol   = "tcp"
-      port       = "443"
-      source_ips = ["0.0.0.0/0", "::/0"]
+      description = "Allow Incoming HTTPS Connections"
+      direction   = "in"
+      protocol    = "tcp"
+      port        = "443"
+      source_ips  = ["0.0.0.0/0", "::/0"]
     }
     ], var.block_icmp_ping_in ? [] : [
     {
-      direction  = "in"
-      protocol   = "icmp"
-      port       = ""
-      source_ips = ["0.0.0.0/0", "::/0"]
+      description = "Allow Incoming ICMP Ping Requests"
+      direction   = "in"
+      protocol    = "icmp"
+      port        = ""
+      source_ips  = ["0.0.0.0/0", "::/0"]
     }
     ], var.cni_plugin != "cilium" ? [] : [
     {
-      direction  = "in"
-      protocol   = "tcp"
-      port       = "4244-4245"
-      source_ips = ["0.0.0.0/0", "::/0"]
+      description = "Allow Incoming Requests to Hubble Server & Hubble Relay (Cilium)"
+      direction   = "in"
+      protocol    = "tcp"
+      port        = "4244-4245"
+      source_ips  = ["0.0.0.0/0", "::/0"]
     }
   ])
 
@@ -332,7 +344,7 @@ locals {
 ipam:
  operator:
   clusterPoolIPv4PodCIDRList:
-   - ${local.cluster_cidr_ipv4}
+   - ${var.cluster_ipv4_cidr}
 devices: "eth1"
 %{if var.enable_wireguard~}
 l7Proxy: false
@@ -364,7 +376,7 @@ spec:
         - name: calico-node
           env:
             - name: CALICO_IPV4POOL_CIDR
-              value: "${local.cluster_cidr_ipv4}"
+              value: "${var.cluster_ipv4_cidr}"
             - name: FELIX_WIREGUARDENABLED
               value: "${var.enable_wireguard}"
 
@@ -379,6 +391,9 @@ persistence:
   %{if var.disable_hetzner_csi~}defaultClass: true%{else~}defaultClass: false%{endif~}
   EOT
 
+  csi_driver_smb_values = var.csi_driver_smb_values != "" ? var.csi_driver_smb_values : <<EOT
+  EOT
+
   nginx_values = var.nginx_values != "" ? var.nginx_values : <<EOT
 controller:
   watchIngressWithoutClass: "true"
@@ -387,7 +402,7 @@ controller:
   config:
     "use-forwarded-headers": "true"
     "compute-full-forwarded-for": "true"
-    "use-proxy-protocol": "true"
+    "use-proxy-protocol": "${!local.using_klipper_lb}"
   EOT
 
   traefik_values = var.traefik_values != "" ? var.traefik_values : <<EOT
@@ -465,4 +480,195 @@ else
   echo "k3s service or k3s-agent service restarted successfully"
 fi
 EOF
+
+  cloudinit_write_files_common = <<EOT
+# Script to rename the private interface to eth1
+- path: /etc/cloud/rename_interface.sh
+  content: |
+    #!/bin/bash
+    set -euo pipefail
+
+    sleep 11
+    
+    INTERFACE=$(ip link show | awk '/^3:/{print $2}' | sed 's/://g')
+    MAC=$(cat /sys/class/net/$INTERFACE/address)
+    
+    cat <<EOF > /etc/udev/rules.d/70-persistent-net.rules
+    SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTR{address}=="$MAC", NAME="eth1"
+    EOF
+
+    ip link set $INTERFACE down
+    ip link set $INTERFACE name eth1
+    ip link set eth1 up
+  permissions: "0744"
+
+# Disable ssh password authentication
+- content: |
+    Port ${var.ssh_port}
+    PasswordAuthentication no
+    X11Forwarding no
+    MaxAuthTries 2
+    AllowTcpForwarding no
+    AllowAgentForwarding no
+    AuthorizedKeysFile .ssh/authorized_keys
+  path: /etc/ssh/sshd_config.d/kube-hetzner.conf
+
+# Set reboot method as "kured"
+- content: |
+    REBOOT_METHOD=kured
+  path: /etc/transactional-update.conf
+
+# Create Rancher repo config
+- content: |
+    [rancher-k3s-common-stable]
+    name=Rancher K3s Common (stable)
+    baseurl=https://rpm.rancher.io/k3s/stable/common/microos/noarch
+    enabled=1
+    gpgcheck=1
+    repo_gpgcheck=0
+    gpgkey=https://rpm.rancher.io/public.key
+  path: /etc/zypp/repos.d/rancher-k3s-common.repo
+
+# Create the kube_hetzner_selinux.te file, that allows in SELinux to not interfere with various needed services
+- path: /root/kube_hetzner_selinux.te
+  content: |
+    module kube_hetzner_selinux 1.0;
+
+    require {
+      type kernel_t, bin_t, kernel_generic_helper_t, iscsid_t, iscsid_exec_t, var_run_t,
+      init_t, unlabeled_t, systemd_logind_t, systemd_hostnamed_t, container_t,
+      cert_t, container_var_lib_t, etc_t, usr_t, container_file_t, container_log_t,
+      container_share_t, container_runtime_exec_t, container_runtime_t, var_log_t, proc_t;
+      class key { read view };
+      class file { open read execute execute_no_trans create link lock rename write append setattr unlink getattr watch };
+      class sock_file { write create unlink };
+      class unix_dgram_socket create;
+      class unix_stream_socket { connectto read write };
+      class dir { add_name create getattr link lock read rename remove_name reparent rmdir setattr unlink search write };
+      class lnk_file { read create };
+      class system module_request;
+      class filesystem associate;
+    }
+
+    #============= kernel_generic_helper_t ==============
+    allow kernel_generic_helper_t bin_t:file execute_no_trans;
+    allow kernel_generic_helper_t kernel_t:key { read view };
+    allow kernel_generic_helper_t self:unix_dgram_socket create;
+
+    #============= iscsid_t ==============
+    allow iscsid_t iscsid_exec_t:file execute;
+    allow iscsid_t var_run_t:sock_file write;
+    allow iscsid_t var_run_t:unix_stream_socket connectto;
+
+    #============= init_t ==============
+    allow init_t unlabeled_t:dir { add_name remove_name rmdir };
+    allow init_t unlabeled_t:lnk_file create;
+    allow init_t container_t:file { open read };
+
+    #============= systemd_logind_t ==============
+    allow systemd_logind_t unlabeled_t:dir search;
+
+    #============= systemd_hostnamed_t ==============
+    allow systemd_hostnamed_t unlabeled_t:dir search;
+
+    #============= container_t ==============
+    # Basic file and directory operations for specific types
+    allow container_t cert_t:dir read;
+    allow container_t cert_t:lnk_file read;
+    allow container_t cert_t:file { read open };
+    allow container_t container_var_lib_t:file { create open read write rename lock };
+    allow container_t etc_t:dir { add_name remove_name write create setattr };
+    allow container_t etc_t:sock_file { create unlink };
+    allow container_t usr_t:dir { add_name create getattr link lock read rename remove_name reparent rmdir setattr unlink search write };
+    allow container_t usr_t:file { append create execute getattr link lock read rename setattr unlink write };
+
+    # Additional rules for container_t
+    allow container_t container_file_t:file { open read write append getattr setattr };
+    allow container_t container_log_t:file { open read write append getattr setattr };
+    allow container_t container_share_t:dir { read write add_name remove_name };
+    allow container_t container_share_t:file { read write create unlink };
+    allow container_t container_runtime_exec_t:file { read execute execute_no_trans open };
+    allow container_t container_runtime_t:unix_stream_socket { connectto read write };
+    allow container_t kernel_t:system module_request;
+    allow container_t container_log_t:dir read;
+    allow container_t container_log_t:file { open read watch };
+    allow container_t container_log_t:lnk_file read;
+    allow container_t var_log_t:dir { add_name write };
+    allow container_t var_log_t:file { create lock open read setattr write };
+    allow container_t var_log_t:dir remove_name;
+    allow container_t var_log_t:file unlink;
+    allow container_t proc_t:filesystem associate;
+
+# Create the k3s registries file if needed
+%{if var.k3s_registries != ""}
+# Create k3s registries file
+- content: ${base64encode(var.k3s_registries)}
+  encoding: base64
+  path: /etc/rancher/k3s/registries.yaml
+%{endif}
+
+# Apply new DNS config
+%{if length(var.dns_servers) > 0}
+# Set prepare for manual dns config
+- content: |
+    [main]
+    dns=none
+  path: /etc/NetworkManager/conf.d/dns.conf
+
+- content: |
+    %{for server in var.dns_servers~}
+    nameserver ${server}
+    %{endfor}
+  path: /etc/resolv.conf
+  permissions: '0644'
+%{endif}
+EOT
+
+  cloudinit_runcmd_common = <<EOT
+# ensure that /var uses full available disk size, thanks to btrfs this is easy
+- [btrfs, 'filesystem', 'resize', 'max', '/var']
+
+# SELinux permission for the SSH alternative port
+%{if var.ssh_port != 22}
+# SELinux permission for the SSH alternative port.
+- [semanage, port, '-a', '-t', ssh_port_t, '-p', tcp, ${var.ssh_port}]
+%{endif}
+
+# Create and apply the necessary SELinux module for kube-hetzner
+- [checkmodule, '-M', '-m', '-o', '/root/kube_hetzner_selinux.mod', '/root/kube_hetzner_selinux.te']
+- ['semodule_package', '-o', '/root/kube_hetzner_selinux.pp', '-m', '/root/kube_hetzner_selinux.mod']
+- [semodule, '-i', '/root/kube_hetzner_selinux.pp']
+- [setsebool, '-P', 'virt_use_samba', '1']
+- [setsebool, '-P', 'domain_kernel_load_modules', '1']
+
+# Disable rebootmgr service as we use kured instead
+- [systemctl, disable, '--now', 'rebootmgr.service']
+
+%{if length(var.dns_servers) > 0}
+# Set the dns manually
+- [systemctl, 'reload', 'NetworkManager']
+%{endif}
+
+# Bounds the amount of logs that can survive on the system
+- [sed, '-i', 's/#SystemMaxUse=/SystemMaxUse=3G/g', /etc/systemd/journald.conf]
+- [sed, '-i', 's/#MaxRetentionSec=/MaxRetentionSec=1week/g', /etc/systemd/journald.conf]
+
+# Reduces the default number of snapshots from 2-10 number limit, to 4 and from 4-10 number limit important, to 2
+- [sed, '-i', 's/NUMBER_LIMIT="2-10"/NUMBER_LIMIT="4"/g', /etc/snapper/configs/root]
+- [sed, '-i', 's/NUMBER_LIMIT_IMPORTANT="4-10"/NUMBER_LIMIT_IMPORTANT="3"/g', /etc/snapper/configs/root]
+
+# Allow network interface
+- [chmod, '+x', '/etc/cloud/rename_interface.sh']
+
+# Restart the sshd service to apply the new config
+- [systemctl, 'restart', 'sshd']
+
+# Make sure the network is up
+- [systemctl, restart, NetworkManager]
+- [systemctl, status, NetworkManager]
+- [ip, route, add, default, via, '172.31.1.1', dev, 'eth0']
+
+# Cleanup some logs
+- [truncate, '-s', '0', '/var/log/audit/audit.log']
+EOT
 }
