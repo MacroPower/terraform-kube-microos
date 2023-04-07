@@ -19,7 +19,7 @@ resource "null_resource" "first_control_plane" {
           disable                     = local.disable_extras
           kubelet-arg                 = local.kubelet_arg
           kube-controller-manager-arg = local.kube_controller_manager_arg
-          flannel-iface               = module.control_planes[keys(module.control_planes)[0]].network_interface
+          flannel-iface               = local.flannel_iface
           node-ip                     = module.control_planes[keys(module.control_planes)[0]].private_ipv4_address
           advertise-address           = module.control_planes[keys(module.control_planes)[0]].private_ipv4_address
           node-taint                  = local.control_plane_nodes[keys(module.control_planes)[0]].taints

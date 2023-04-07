@@ -6,7 +6,6 @@ module "control_planes" {
   name                         = "${var.use_cluster_name_in_node_name ? "${var.cluster_name}-" : ""}${each.value.nodepool_name}"
   ipv4_address                 = each.value.ipv4_address
   os_device                    = each.value.os_device
-  network_interface            = each.value.network_interface
   ssh_port                     = var.ssh_port
   ssh_public_key               = var.ssh_public_key
   ssh_private_key              = var.ssh_private_key
@@ -52,7 +51,7 @@ resource "null_resource" "control_planes" {
           disable                     = local.disable_extras
           kubelet-arg                 = local.kubelet_arg
           kube-controller-manager-arg = local.kube_controller_manager_arg
-          flannel-iface               = module.control_planes[each.key].network_interface
+          flannel-iface               = local.flannel_iface
           node-ip                     = module.control_planes[each.key].private_ipv4_address
           advertise-address           = module.control_planes[each.key].private_ipv4_address
           node-label                  = each.value.labels

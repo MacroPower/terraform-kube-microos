@@ -41,10 +41,12 @@ variable "cluster_ipv4_cidr" {
 variable "control_plane_nodepools" {
   description = "Number of control plane nodes."
   type = list(object({
-    name        = string
-    labels      = list(string)
-    taints      = list(string)
-    count       = number
+    name         = string
+    ipv4_address = string
+    os_device    = string
+    labels       = list(string)
+    taints       = list(string)
+    count        = number
   }))
   default = []
 }
@@ -53,6 +55,8 @@ variable "agent_nodepools" {
   description = "Number of agent nodes."
   type = list(object({
     name                 = string
+    ipv4_address         = string
+    os_device            = string
     labels               = list(string)
     taints               = list(string)
     count                = number

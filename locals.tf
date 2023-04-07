@@ -55,7 +55,6 @@ locals {
       format("%s-%s-%s", pool_index, node_index, nodepool_obj.name) => {
         nodepool_name : nodepool_obj.name,
         ipv4_address : nodepool_obj.ipv4_address,
-        network_interface : nodepool_obj.network_interface,
         os_device : nodepool_obj.os_device,
         longhorn_devices : lookup(nodepool_obj, "longhorn_devices", []),
         labels : concat(local.default_control_plane_labels, nodepool_obj.labels),
@@ -72,7 +71,6 @@ locals {
       format("%s-%s-%s", pool_index, node_index, nodepool_obj.name) => {
         nodepool_name : nodepool_obj.name,
         ipv4_address : nodepool_obj.ipv4_address,
-        network_interface : nodepool_obj.network_interface,
         os_device : nodepool_obj.os_device,
         longhorn_devices : lookup(nodepool_obj, "longhorn_devices", []),
         labels : concat(local.default_agent_labels, nodepool_obj.labels),

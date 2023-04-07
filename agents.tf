@@ -6,7 +6,6 @@ module "agents" {
   name                         = "${var.use_cluster_name_in_node_name ? "${var.cluster_name}-" : ""}${each.value.nodepool_name}"
   ipv4_address                 = each.value.ipv4_address
   os_device                    = each.value.os_device
-  network_interface            = each.value.network_interface
   ssh_port                     = var.ssh_port
   ssh_public_key               = var.ssh_public_key
   ssh_private_key              = var.ssh_private_key
@@ -44,7 +43,7 @@ resource "null_resource" "agents" {
       server        = "https://${module.control_planes[keys(module.control_planes)[0]].private_ipv4_address}:6443"
       token         = random_password.k3s_token.result
       kubelet-arg   = local.kubelet_arg
-      flannel-iface = module.agents[each.key].network_interface
+      flannel-iface = local.flannel_iface
       node-ip       = module.agents[each.key].private_ipv4_address
       node-label    = each.value.labels
       node-taint    = each.value.taints

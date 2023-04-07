@@ -8,11 +8,6 @@ variable "ipv4_address" {
   type        = string
 }
 
-variable "network_interface" {
-  description = "Network interface"
-  type        = string
-}
-
 variable "os_device" {
   description = "OS Device"
   type        = string
