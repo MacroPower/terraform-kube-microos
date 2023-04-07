@@ -11,12 +11,13 @@ module "control_planes" {
   ssh_public_key               = var.ssh_public_key
   ssh_private_key              = var.ssh_private_key
   ssh_additional_public_keys   = var.ssh_additional_public_keys
-  packages_to_install          = local.packages_to_install
+  packages_to_install          = var.packages_to_install
   dns_servers                  = var.dns_servers
   k3s_registries               = var.k3s_registries
   k3s_registries_update_script = local.k3s_registries_update_script
   cloudinit_write_files_common = local.cloudinit_write_files_common
   cloudinit_runcmd_common      = local.cloudinit_runcmd_common
+  opensuse_microos_mirror_link = var.opensuse_microos_mirror_link
 
   automatically_upgrade_os = var.automatically_upgrade_os
 }

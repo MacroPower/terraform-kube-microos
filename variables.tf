@@ -26,13 +26,22 @@ variable "ssh_additional_public_keys" {
   default     = []
 }
 
+variable "network_ipv4_cidr" {
+  description = "The main network cidr that all subnets will be created upon."
+  type        = string
+  default     = "10.0.0.0/8"
+}
+
+variable "cluster_ipv4_cidr" {
+  description = "Internal Pod CIDR, used for the controller and currently for calico."
+  type        = string
+  default     = "10.42.0.0/16"
+}
+
 variable "control_plane_nodepools" {
   description = "Number of control plane nodes."
   type = list(object({
     name        = string
-    server_type = string
-    location    = string
-    backups     = optional(bool)
     labels      = list(string)
     taints      = list(string)
     count       = number
@@ -44,10 +53,6 @@ variable "agent_nodepools" {
   description = "Number of agent nodes."
   type = list(object({
     name                 = string
-    server_type          = string
-    location             = string
-    backups              = optional(bool)
-    floating_ip          = optional(bool)
     labels               = list(string)
     taints               = list(string)
     count                = number
@@ -472,6 +477,17 @@ variable "k3s_registries" {
   type        = string
 }
 
+variable "opensuse_microos_mirror_link" {
+  description = "The mirror link to use for the opensuse microos image."
+  default     = "https://download.opensuse.org/tumbleweed/appliances/openSUSE-MicroOS.x86_64-OpenStack-Cloud.qcow2"
+  type        = string
+
+  validation {
+    condition     = can(regex("^https.*openSUSE-MicroOS\\.x86_64[\\-0-9\\.]*-OpenStack-Cloud.*\\.qcow2$", var.opensuse_microos_mirror_link))
+    error_message = "You need to use a mirror link from https://download.opensuse.org/tumbleweed/appliances/openSUSE-MicroOS.x86_64-OpenStack-Cloud.qcow2.mirrorlist"
+  }
+}
+
 variable "additional_tls_sans" {
   description = "Additional TLS SANs to allow connection to control-plane through it."
   default     = []
@@ -482,4 +498,10 @@ variable "calico_version" {
   type        = string
   default     = null
   description = "Version of Calico."
+}
+
+variable "packages_to_install" {
+  description = "Packages to install"
+  type        = list(string)
+  default     = []
 }
