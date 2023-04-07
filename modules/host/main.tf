@@ -123,7 +123,18 @@ resource "null_resource" "k3s_host" {
       transactional-update --continue shell <<< "zypper --no-gpg-checks --non-interactive install https://github.com/k3s-io/k3s-selinux/releases/download/v1.3.testing.4/k3s-selinux-1.3-4.sle.noarch.rpm"
       transactional-update --continue shell <<< "zypper addlock k3s-selinux"
       transactional-update --continue shell <<< "restorecon -Rv /etc/selinux/targeted/policy && restorecon -Rv /var/lib && setenforce 1"
-      sleep 1 && udevadm settle && reboot
+      transactional-update --continue shell <<< "
+      ls -l /etc/cloud/cloud.cfg.d && \
+      { tee /etc/cloud/cloud.cfg << EOFCLOUDCFG
+${replace(local.cloudinit_config, "\"", "\\\"")}
+EOFCLOUDCFG
+      } && \
+      { tee /etc/cloud/cloud.cfg.d/init.cfg << EOFCLOUDUSERDATA
+${replace(local.cloudinit_userdata_config, "\"", "\\\"")}
+EOFCLOUDUSERDATA
+      }"
+      transactional-update --continue shell <<< "cloud-init init --local"
+      sleep 1 && udevadm settle
       EOT
     ]
   }
@@ -174,25 +185,5 @@ resource "null_resource" "k3s_host" {
 
   provisioner "remote-exec" {
     inline = [var.k3s_registries_update_script]
-  }
-}
-
-data "cloudinit_config" "config" {
-  gzip          = true
-  base64_encode = true
-
-  # Main cloud-config configuration file.
-  part {
-    filename     = "init.cfg"
-    content_type = "text/cloud-config"
-    content = templatefile(
-      "${path.module}/templates/cloudinit.yaml.tpl",
-      {
-        hostname                     = local.name
-        sshAuthorizedKeys            = concat([var.ssh_public_key], var.ssh_additional_public_keys)
-        cloudinit_write_files_common = var.cloudinit_write_files_common
-        cloudinit_runcmd_common      = var.cloudinit_runcmd_common
-      }
-    )
   }
 }

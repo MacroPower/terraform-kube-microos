@@ -15,4 +15,19 @@ locals {
   name = "${var.name}-${random_string.server.id}"
 
   root_device = length(regexall(".+[0-9]$", var.os_device)) > 0 ? "${var.os_device}p3" : "${var.os_device}3"
+
+  cloudinit_config = templatefile(
+    "${path.module}/templates/cloud.cfg.tpl",
+    {}
+  )
+
+  cloudinit_userdata_config = templatefile(
+    "${path.module}/templates/cloudinit.yaml.tpl",
+    {
+        hostname                     = local.name
+        sshAuthorizedKeys            = concat([var.ssh_public_key], var.ssh_additional_public_keys)
+        cloudinit_write_files_common = var.cloudinit_write_files_common
+        cloudinit_runcmd_common      = var.cloudinit_runcmd_common
+    }
+  )
 }

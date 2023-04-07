@@ -59,7 +59,6 @@ locals {
         longhorn_devices : lookup(nodepool_obj, "longhorn_devices", []),
         labels : concat(local.default_control_plane_labels, nodepool_obj.labels),
         taints : concat(local.default_control_plane_taints, nodepool_obj.taints),
-        backups : nodepool_obj.backups,
         index : node_index
       }
     }
@@ -75,7 +74,6 @@ locals {
         longhorn_devices : lookup(nodepool_obj, "longhorn_devices", []),
         labels : concat(local.default_agent_labels, nodepool_obj.labels),
         taints : concat(local.default_agent_taints, nodepool_obj.taints),
-        backups : lookup(nodepool_obj, "backups", false),
         index : node_index
       }
     }
