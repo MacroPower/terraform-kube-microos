@@ -477,25 +477,29 @@ else
 fi
 EOF
 
+  rename_interface_script = <<EOF
+#!/bin/bash
+set -euo pipefail
+
+sleep 11
+
+INTERFACE=$(ip link show | awk '/^2:/{print $2}' | sed 's/://g')
+MAC=$(cat /sys/class/net/$INTERFACE/address)
+
+cat <<EORULEF > /etc/udev/rules.d/70-persistent-net.rules
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTR{address}=="$MAC", NAME="eth1"
+EORULEF
+
+ip link set $INTERFACE down
+ip link set $INTERFACE name eth1
+ip link set eth1 up
+EOF
+
   cloudinit_write_files_common = <<EOT
 # Script to rename the private interface to eth1
 - path: /etc/cloud/rename_interface.sh
-  content: |
-    #!/bin/bash
-    set -euo pipefail
-
-    sleep 11
-    
-    INTERFACE=$(ip link show | awk '/^3:/{print $2}' | sed 's/://g')
-    MAC=$(cat /sys/class/net/$INTERFACE/address)
-    
-    cat <<EOF > /etc/udev/rules.d/70-persistent-net.rules
-    SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTR{address}=="$MAC", NAME="eth1"
-    EOF
-
-    ip link set $INTERFACE down
-    ip link set $INTERFACE name eth1
-    ip link set eth1 up
+  content: ${base64encode(local.rename_interface_script)}|
+  encoding: base64
   permissions: "0744"
 
 # Disable ssh password authentication
